@@ -64,7 +64,7 @@ número dedicado e uso responsável.
 Contrate uma VPS com Ubuntu (4 GB de RAM, datacenter Brasil). Depois, conectada na VPS:
 
 ```bash
-git clone SEU_REPO_AQUI crm && cd crm && bash hostgator-setup-kit/install.sh
+git clone https://github.com/IACLUBCOMUNIDADE/crm-ia-club.git crm && cd crm && bash hostgator-setup-kit/install.sh
 ```
 
 O instalador pergunta o que precisa (domínio, chaves que você criou na Etapa 1),
