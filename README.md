@@ -1,3 +1,7 @@
+> 🎓 **Aluno da Mentoria IA Club?** O seu caminho de instalação, testado e direto,
+> está em [**COMECE-AQUI.md**](COMECE-AQUI.md). O restante deste README é a documentação
+> original do projeto DeskcommCRM, no qual esta versão se baseia.
+
 <div align="center">
 
 [🇧🇷 Português](README.pt-BR.md) · 🇺🇸 English · [🇪🇸 Español](README.es.md)
