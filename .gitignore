@@ -91,3 +91,5 @@ package-lock.json
 .e2e-invite-url.json
 .superpowers/evidence/
 evidence/.sonda-score-residuo.json
+.hubspot-sync-cursor
+scripts/seed-alle-funil.ts
