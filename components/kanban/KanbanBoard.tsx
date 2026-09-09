@@ -31,6 +31,8 @@ interface KanbanBoardProps {
    */
   pulses?: Map<string, number>;
   onSelectionChange?: (ids: string[]) => void;
+  /** Abrir "Novo Lead" já com esta etapa pré-selecionada, vindo da coluna clicada. */
+  onAddLead?: (stageId: string) => void;
 }
 
 function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> {
@@ -73,6 +75,7 @@ export function KanbanBoard({
   selectedIds,
   pulses: pulsesProp,
   onSelectionChange,
+  onAddLead,
 }: KanbanBoardProps) {
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
   const queryResult = useBoard(useExternal ? null : pipelineId);
@@ -167,101 +170,3 @@ export function KanbanBoard({
       const { source, destination, draggableId } = result;
       if (!destination) return;
       if (
-        source.droppableId === destination.droppableId &&
-        source.index === destination.index
-      ) {
-        return;
-      }
-
-      const lead = data.leads.find((l) => l.id === draggableId);
-      if (!lead) return;
-
-      const destStageId = destination.droppableId;
-      const destList = (grouped.get(destStageId) ?? []).filter(
-        (l) => l.id !== draggableId,
-      );
-
-      const before = destination.index > 0 ? destList[destination.index - 1] : null;
-      const after =
-        destination.index < destList.length ? destList[destination.index] : null;
-
-      const newPosition = midpoint(
-        before?.position_in_stage ?? null,
-        after?.position_in_stage ?? null,
-      );
-
-      if (Number.isNaN(newPosition)) {
-        // Collision — Wave 8 will handle global rebalance. For now, abort silently.
-        return;
-      }
-
-      moveCard.mutate({
-        leadId: lead.id,
-        stageId: destStageId,
-        positionInStage: newPosition,
-        expectedUpdatedAt: lead.updated_at,
-      });
-    },
-    [data, grouped, moveCard],
-  );
-
-  if (isLoading) {
-    return <BoardSkeleton />;
-  }
-
-  if (isError) {
-    return (
-      <Card className="m-4 p-6 text-sm text-text-muted">
-        Falha ao carregar o board.
-        {error instanceof Error ? ` ${error.message}` : null}
-      </Card>
-    );
-  }
-
-  if (!data || !grouped) {
-    return null;
-  }
-
-  if (data.stages.length === 0) {
-    return (
-      <Card className="m-4 p-6 text-sm text-text-muted">
-        Nenhum lead nesta pipeline ainda.
-      </Card>
-    );
-  }
-
-  return (
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4">
-        {data.stages.map((stage) => (
-          <StageColumn
-            key={stage.id}
-            stage={stage}
-            leads={grouped.get(stage.id) ?? []}
-            pipelineId={pipelineId}
-            ownerNames={ownerNames}
-            coolingIds={coolingIds}
-            reactivations={reactivations}
-            pulses={pulsesProp ?? queryResult.pulses}
-            canonicalTags={canonicalTags}
-            selectedLeadIds={selectedLeadIds}
-            onSelect={handleSelect}
-            onOpen={setDossieId}
-          />
-        ))}
-      </div>
-      {leadDoDossie && (
-        <LeadDossier
-          open
-          onOpenChange={(v) => !v && setDossieId(null)}
-          lead={leadDoDossie}
-          pipelineId={pipelineId}
-          stageName={
-            data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
-          }
-          ownerNames={ownerNames}
-        />
-      )}
-    </DragDropContext>
-  );
-}
