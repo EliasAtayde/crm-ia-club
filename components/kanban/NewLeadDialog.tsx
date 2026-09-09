@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import {
@@ -22,8 +22,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCreateLead } from "@/hooks/kanban/useCreateLead";
+import { useContactList } from "@/hooks/contacts/useContactList";
+import { useCreateContact } from "@/hooks/contacts/useCreateContact";
 import type { Stage } from "@/lib/kanban/types";
+import type { Contact } from "@/lib/types/contacts";
 import { createLeadSchema, type CreateLeadInput } from "@/lib/schemas/leads";
+import { X } from "@/lib/ui/icons";
 
 interface FormShape {
   title: string;
@@ -39,6 +43,8 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   pipelineId: string;
   stages: Stage[];
+  /** Se vier de um "+" de coluna, já chega com a etapa daquela coluna. */
+  initialStageId?: string;
 }
 
 function defaultStageId(stages: Stage[]): string {
@@ -46,9 +52,53 @@ function defaultStageId(stages: Stage[]): string {
   return open?.id ?? stages[0]?.id ?? "";
 }
 
-export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props) {
+function contactLabel(c: Contact): string {
+  return c.display_name || c.name || c.phone_number || c.email || "Sem nome";
+}
+
+export function NewLeadDialog({
+  open,
+  onOpenChange,
+  pipelineId,
+  stages,
+  initialStageId,
+}: Props) {
   const create = useCreateLead(pipelineId);
-  const initialStage = useMemo(() => defaultStageId(stages), [stages]);
+  const createContact = useCreateContact();
+  const initialStage = useMemo(
+    () => initialStageId ?? defaultStageId(stages),
+    [stages, initialStageId],
+  );
+
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [contactQuery, setContactQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [showResults, setShowResults] = useState(false);
+  const inputWrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(contactQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [contactQuery]);
+
+  const contactSearch = useContactList({
+    search: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
+  });
+  const results: Contact[] =
+    debouncedQuery.length >= 2
+      ? (contactSearch.data?.pages.flatMap((p) => p.data) ?? [])
+      : [];
+
+  // Fecha a lista de resultados ao clicar fora.
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (!inputWrapperRef.current?.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
 
   const form = useForm<FormShape>({
     defaultValues: {
@@ -61,12 +111,49 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props)
     },
   });
 
-  // Reset stage_id default if stages change while dialog mounted.
+  // Sempre que o diálogo abre (inclusive vindo de um "+" de coluna diferente),
+  // realinha a etapa selecionada com a etapa pedida.
   useEffect(() => {
-    if (!form.getValues("stage_id") && initialStage) {
+    if (open) {
       form.setValue("stage_id", initialStage);
     }
-  }, [initialStage, form]);
+  }, [open, initialStage, form]);
+
+  // Reseta a busca de contato toda vez que o diálogo fecha.
+  useEffect(() => {
+    if (!open) {
+      setSelectedContact(null);
+      setContactQuery("");
+      setDebouncedQuery("");
+      setShowResults(false);
+    }
+  }, [open]);
+
+  function handleSelectContact(c: Contact) {
+    setSelectedContact(c);
+    setContactQuery("");
+    setShowResults(false);
+    // Só preenche o título automaticamente se o usuário ainda não escreveu nada.
+    if (!form.getValues("title").trim()) {
+      form.setValue("title", contactLabel(c));
+    }
+  }
+
+  function handleClearContact() {
+    setSelectedContact(null);
+  }
+
+  async function handleCreateContactFromQuery() {
+    const name = contactQuery.trim();
+    if (!name) return;
+    try {
+      const res = await createContact.mutateAsync({ name, source: "manual" });
+      handleSelectContact(res.data);
+      toast.success("Contato criado");
+    } catch {
+      // toast já mostrado pelo hook
+    }
+  }
 
   async function onSubmit(values: FormShape) {
     const tags = values.tagsRaw
@@ -94,6 +181,7 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props)
       source: "manual",
       tags,
     };
+    if (selectedContact) payload.contact_id = selectedContact.id;
     if (values.description.trim()) payload.description = values.description.trim();
     if (valueCents !== null) payload.value_cents = valueCents;
     if (values.expected_close_date) payload.expected_close_date = values.expected_close_date;
@@ -116,6 +204,7 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props)
         tagsRaw: "",
         expected_close_date: "",
       });
+      setSelectedContact(null);
       onOpenChange(false);
     } catch {
       // toast already shown
@@ -134,6 +223,91 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages }: Props)
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <div className="space-y-2" ref={inputWrapperRef}>
+            <Label htmlFor="contact-search">Contato</Label>
+            {selectedContact ? (
+              <div className="flex items-center justify-between rounded-md border border-border bg-surface-muted/40 px-3 py-2">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">
+                    {contactLabel(selectedContact)}
+                  </span>
+                  {selectedContact.phone_number && (
+                    <span className="text-xs text-text-muted">
+                      {selectedContact.phone_number}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearContact}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-text-muted hover:bg-surface hover:text-text"
+                  aria-label="Remover contato selecionado"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Input
+                  id="contact-search"
+                  placeholder="Buscar contato por nome ou telefone…"
+                  value={contactQuery}
+                  onChange={(e) => {
+                    setContactQuery(e.target.value);
+                    setShowResults(true);
+                  }}
+                  onFocus={() => setShowResults(true)}
+                  autoComplete="off"
+                />
+                {showResults && debouncedQuery.length >= 2 && (
+                  <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-md">
+                    {contactSearch.isLoading ? (
+                      <div className="px-3 py-2 text-xs text-text-muted">
+                        Buscando…
+                      </div>
+                    ) : results.length > 0 ? (
+                      <ul className="max-h-48 overflow-y-auto py-1">
+                        {results.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectContact(c)}
+                              className="flex w-full flex-col items-start px-3 py-1.5 text-left text-sm hover:bg-surface-muted/60"
+                            >
+                              <span className="font-medium">{contactLabel(c)}</span>
+                              {c.phone_number && (
+                                <span className="text-xs text-text-muted">
+                                  {c.phone_number}
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="flex flex-col gap-1 p-2">
+                        <span className="px-1 text-xs text-text-muted">
+                          Nenhum contato encontrado.
+                        </span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={createContact.isPending}
+                          onClick={handleCreateContactFromQuery}
+                        >
+                          {createContact.isPending
+                            ? "Criando…"
+                            : `Criar contato "${contactQuery.trim()}"`}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="title">Título</Label>
             <Input
