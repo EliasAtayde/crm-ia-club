@@ -49,6 +49,19 @@ export function PipelinePageClient({
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
+  const [preselectedStageId, setPreselectedStageId] = useState<string | undefined>(
+    undefined,
+  );
+
+  const handleOpenNewLead = useCallback(() => {
+    setPreselectedStageId(undefined);
+    setNewOpen(true);
+  }, []);
+
+  const handleAddLeadToStage = useCallback((stageId: string) => {
+    setPreselectedStageId(stageId);
+    setNewOpen(true);
+  }, []);
 
   const filteredLeads = data ? applyFilters(data.leads, filters) : [];
 
@@ -74,13 +87,15 @@ export function PipelinePageClient({
       data-refetch-divergencias={seguranca.divergencias}
       data-refetch-em={seguranca.ultimaVerificacao ?? ""}
     >
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">
           {data?.pipeline.name ?? initialName}
         </h1>
-        <Button onClick={() => setNewOpen(true)} disabled={!data}>
-          <Plus size={16} className="mr-2" /> Novo Lead
-        </Button>
+        <div>
+          <Button onClick={handleOpenNewLead} disabled={!data}>
+            <Plus size={16} className="mr-2" /> Novo Lead
+          </Button>
+        </div>
       </header>
       {data && (
         <NewLeadDialog
@@ -88,6 +103,7 @@ export function PipelinePageClient({
           onOpenChange={setNewOpen}
           pipelineId={pipelineId}
           stages={data.stages}
+          initialStageId={preselectedStageId}
         />
       )}
       <FilterBar filters={filters} onChange={setFilters} leads={data?.leads ?? []} />
@@ -109,6 +125,7 @@ export function PipelinePageClient({
           pipeline={data.pipeline}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
+          onAddLead={handleAddLeadToStage}
         />
       )}
       <BulkActionBar
