@@ -6,6 +6,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { buildCardInput } from "@/lib/kanban/card-state";
 import { KanbanCard } from "./KanbanCard";
+import { Plus } from "@/lib/ui/icons";
 
 interface StageColumnProps {
   stage: Stage;
@@ -25,6 +26,8 @@ interface StageColumnProps {
   onSelect?: (leadId: string, additive: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
+  /** Abrir "Novo Lead" já com esta etapa pré-selecionada. */
+  onAddLead?: (stageId: string) => void;
 }
 
 function formatBRL(cents: number): string {
@@ -51,6 +54,7 @@ export function StageColumn({
   pulses,
   onSelect,
   onOpen,
+  onAddLead,
 }: StageColumnProps) {
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
   const accentStyle: CSSProperties | undefined = stage.color
@@ -74,6 +78,17 @@ export function StageColumn({
         <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-muted">
           {leads.length}
         </span>
+        {onAddLead && (
+          <button
+            type="button"
+            onClick={() => onAddLead(stage.id)}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface hover:text-text"
+            aria-label={`Adicionar lead em ${stage.name}`}
+            title={`Adicionar lead em ${stage.name}`}
+          >
+            <Plus size={12} weight="bold" />
+          </button>
+        )}
       </div>
 
       {totalCents > 0 && (
