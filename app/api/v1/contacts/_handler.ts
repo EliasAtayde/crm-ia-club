@@ -340,8 +340,10 @@ export async function patchContactHandler(
   if (input.name !== undefined) patch.name = input.name;
   if (input.display_name !== undefined) patch.display_name = input.display_name;
   if (input.email !== undefined) {
+    // email_normalized é coluna GENERATED ALWAYS (calculada pelo Postgres a
+    // partir de `email`) — nunca escrever nela diretamente, o banco recusa
+    // (mesma pegadinha documentada em fn_lgpd_cascade_redact_contact).
     patch.email = input.email;
-    patch.email_normalized = input.email ? input.email.trim().toLowerCase() : null;
   }
   if (input.phone_number !== undefined) patch.phone_number = input.phone_number;
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
