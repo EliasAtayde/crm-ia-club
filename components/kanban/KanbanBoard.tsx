@@ -16,22 +16,12 @@ import { LeadDossier } from "./LeadDossier";
 
 interface KanbanBoardProps {
   pipelineId: string;
-  /** Optional override: if provided, skips internal useBoard fetch. */
   stages?: Stage[];
   leads?: Lead[];
   pipeline?: Pipeline;
   selectedIds?: string[];
-  /**
-   * Ids que chegaram por evento remoto, quando o board recebe os dados de fora.
-   *
-   * Quem assina o realtime é quem chama `useBoard` com o pipeline — e nesta
-   * página é o _client, não este componente (aqui `useBoard(null)` fica
-   * desligado por causa do `useExternal`). Sem esta prop o pulso nasce no lugar
-   * certo e morre na fronteira: o dado vem por prop e o sinal ficava para trás.
-   */
   pulses?: Map<string, number>;
   onSelectionChange?: (ids: string[]) => void;
-  /** Abrir "Novo Lead" já com esta etapa pré-selecionada, vindo da coluna clicada. */
   onAddLead?: (stageId: string) => void;
 }
 
@@ -42,7 +32,6 @@ function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> 
     const bucket = map.get(lead.stage_id);
     if (bucket) bucket.push(lead);
   }
-  // Already ordered by position_in_stage at fetch time, but be defensive.
   for (const list of map.values()) {
     list.sort((a, b) => a.position_in_stage - b.position_in_stage);
   }
@@ -85,12 +74,7 @@ export function KanbanBoard({
     () => new Map((members ?? []).map((m) => [m.user_id, m.full_name])),
     [members],
   );
-  // Esfriando vem do MESMO radar que alimenta /app/radar — o board não
-  // reclassifica nada (contrato §3.3). `em_voo` fica de fora: a IA já prometeu
-  // voltar, então não há decisão pendente para o humano.
   const { data: atRisk } = useAtRiskLeads();
-  // As propostas vivas vêm da MESMA forma que o risco: uma lista por org, que o
-  // card consome sem saber de onde veio. Ver o cabeçalho da rota.
   const { data: propostasVivas } = useReactivations();
   const reactivations = useMemo(() => {
     const m = new Map<string, { proposalId: string; expiresAt: string }>();
@@ -107,15 +91,11 @@ export function KanbanBoard({
     }
     return ids;
   }, [atRisk, pipelineId]);
-  // A tag canônica do pipeline é a ÚNICA que fica no card (como ponto de 6px);
-  // as outras saem para o hover. Já existe em settings — não inventa campo.
   const canonicalTags = useMemo(() => {
     const raw = (pipelineProp ?? queryResult.data?.pipeline)?.settings?.canonical_tags;
     return Array.isArray(raw) ? raw.filter((t): t is string => typeof t === "string") : [];
   }, [pipelineProp, queryResult.data?.pipeline]);
 
-  // O dossiê é do BOARD e não da página: ele precisa do lead inteiro e do nome
-  // do estágio, que só existem aqui depois do agrupamento.
   const [dossieId, setDossieId] = useState<string | null>(null);
   const [internalSelected, setInternalSelected] = useState<Set<string>>(new Set());
   const selectedLeadIds = useMemo(
@@ -170,3 +150,101 @@ export function KanbanBoard({
       const { source, destination, draggableId } = result;
       if (!destination) return;
       if (
+        source.droppableId === destination.droppableId &&
+        source.index === destination.index
+      ) {
+        return;
+      }
+
+      const lead = data.leads.find((l) => l.id === draggableId);
+      if (!lead) return;
+
+      const destStageId = destination.droppableId;
+      const destList = (grouped.get(destStageId) ?? []).filter(
+        (l) => l.id !== draggableId,
+      );
+
+      const before = destination.index > 0 ? destList[destination.index - 1] : null;
+      const after =
+        destination.index < destList.length ? destList[destination.index] : null;
+
+      const newPosition = midpoint(
+        before?.position_in_stage ?? null,
+        after?.position_in_stage ?? null,
+      );
+
+      if (Number.isNaN(newPosition)) {
+        return;
+      }
+
+      moveCard.mutate({
+        leadId: lead.id,
+        stageId: destStageId,
+        positionInStage: newPosition,
+        expectedUpdatedAt: lead.updated_at,
+      });
+    },
+    [data, grouped, moveCard],
+  );
+
+  if (isLoading) {
+    return <BoardSkeleton />;
+  }
+
+  if (isError) {
+    return (
+      <Card className="m-4 p-6 text-sm text-text-muted">
+        Falha ao carregar o board.
+        {error instanceof Error ? ` ${error.message}` : null}
+      </Card>
+    );
+  }
+
+  if (!data || !grouped) {
+    return null;
+  }
+
+  if (data.stages.length === 0) {
+    return (
+      <Card className="m-4 p-6 text-sm text-text-muted">
+        Nenhum lead nesta pipeline ainda.
+      </Card>
+    );
+  }
+
+  return (
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <div className="flex h-full gap-3 overflow-x-auto p-4">
+        {data.stages.map((stage) => (
+          <StageColumn
+            key={stage.id}
+            stage={stage}
+            leads={grouped.get(stage.id) ?? []}
+            pipelineId={pipelineId}
+            ownerNames={ownerNames}
+            coolingIds={coolingIds}
+            reactivations={reactivations}
+            pulses={pulsesProp ?? queryResult.pulses}
+            canonicalTags={canonicalTags}
+            selectedLeadIds={selectedLeadIds}
+            onSelect={handleSelect}
+            onOpen={setDossieId}
+            onAddLead={onAddLead}
+          />
+        ))}
+      </div>
+      {leadDoDossie && (
+        <LeadDossier
+          open
+          onOpenChange={(v) => !v && setDossieId(null)}
+          lead={leadDoDossie}
+          pipelineId={pipelineId}
+          stageName={
+            data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
+          }
+          ownerNames={ownerNames}
+        />
+      )}
+    </DragDropContext>
+  );
+}
